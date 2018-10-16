@@ -557,6 +557,8 @@ public abstract class AbstractBytesToBytesMapSuite {
         iter2.next();
       }
       assertFalse(iter2.hasNext());
+    } catch (Throwable e) {
+      e.printStackTrace();
     } finally {
       map.free();
       for (File spillFile : spillFilesCreated) {

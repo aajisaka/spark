@@ -291,6 +291,7 @@ public final class BytesToBytesMap extends MemoryConsumer {
             recordsInPage = -1;
           } catch (IOException e) {
             // Scala iterator does not handle exception
+            logger.error("error", e);
             Platform.throwException(e);
           }
         }
@@ -334,6 +335,7 @@ public final class BytesToBytesMap extends MemoryConsumer {
             logger.error("Error while closing spill reader", e2);
           }
           // Scala iterator does not handle exception
+          logger.error("error", e);
           Platform.throwException(e);
         }
         loc.with(reader.getBaseObject(), reader.getBaseOffset(), reader.getRecordLength());

@@ -17,12 +17,13 @@
 
 package org.apache.spark.unsafe;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 
-import sun.misc.Cleaner;
 import sun.misc.Unsafe;
 
 public final class Platform {
@@ -154,6 +155,30 @@ public final class Platform {
     return newMemory;
   }
 
+  private static final MethodHandle invoker = invokerImpl();
+
+  private static MethodHandle invokerImpl() {
+    MethodHandles.Lookup lookup = MethodHandles.lookup();
+    try {
+      try {
+        // Java 8
+        final Class<?> cleanerClass = Class.forName("sun.misc.Cleaner");
+        final Method m = cleanerClass.getMethod("create", Object.class, Runnable.class);
+        m.setAccessible(true);
+        return lookup.unreflect(m);
+      } catch (ClassNotFoundException e) {
+        // Java 9+
+        final Class<?> cleanerClass = Class.forName("java.lang.ref.Cleaner");
+        final Method m = cleanerClass.getMethod("register", Object.class, Runnable.class);
+        m.setAccessible(true);
+        return lookup.unreflect(m);
+      }
+    } catch (ReflectiveOperationException e) {
+      // unreachable
+    }
+    return null;
+  }
+
   /**
    * Uses internal JDK APIs to allocate a DirectByteBuffer while ignoring the JVM's
    * MaxDirectMemorySize limit (the default limit is too low and we do not want to require users
@@ -169,11 +194,17 @@ public final class Platform {
       cleanerField.setAccessible(true);
       long memory = allocateMemory(size);
       ByteBuffer buffer = (ByteBuffer) constructor.newInstance(memory, size);
-      Cleaner cleaner = Cleaner.create(buffer, () -> freeMemory(memory));
-      cleanerField.set(buffer, cleaner);
+      Object cleaner = invoker.invoke(buffer, (Runnable) () -> freeMemory(memory));
+      try {
+        cleanerField.set(buffer, cleaner);
+      } catch (Exception ignore) {
+        // (Java 9+) Already registered to java.lang.ref.Cleaner and freeMemory()
+        // is called automatically when the buffer becomes phantom reachable.
+        // Therefore, we don't need to set the field.
+      }
       return buffer;
-    } catch (Exception e) {
-      throwException(e);
+    } catch (Throwable t) {
+      throwException(t);
     }
     throw new IllegalStateException("unreachable");
   }
